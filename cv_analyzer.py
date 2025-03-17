@@ -1,364 +1,313 @@
+import streamlit as st
 import pandas as pd
-import re
-import io
-import base64
+import plotly.express as px
+import time
+import json
+import os
+import sys
 from datetime import datetime
-import PyPDF2
-import docx
-import random
+from pathlib import Path
+import tempfile
+import base64
 
-class CVAnalyzer:
-    def __init__(self):
-        """Initialize the CV Analyzer with default settings."""
-        self.skills_database = {
-            "python": ["python", "pandas", "numpy", "scikit-learn", "tensorflow", "pytorch", "django", "flask"],
-            "javascript": ["javascript", "react", "vue", "angular", "node.js", "express", "jquery"],
-            "data_science": ["machine learning", "data analysis", "statistical analysis", "big data", "data mining"],
-            "databases": ["sql", "mysql", "postgresql", "mongodb", "oracle", "database management"],
-            "project_management": ["agile", "scrum", "kanban", "project planning", "team leadership"],
-            "communication": ["presentation", "teamwork", "verbal communication", "written communication"],
-            "languages": ["english", "german", "french", "spanish", "chinese", "russian", "arabic"],
-            "design": ["ui design", "ux design", "graphic design", "adobe", "photoshop", "illustrator"]
-        }
-        
-        self.professions = [
-            "Software Engineer", "Data Scientist", "Project Manager", "UI/UX Designer",
-            "Product Manager", "Marketing Specialist", "Financial Analyst", "HR Manager"
-        ]
-        
-        self.experience_levels = ["Junior", "Mid-Level", "Senior", "Lead", "Manager", "Director", "VP", "C-Level"]
+# Import CV Analyzer and Debugger
+from cv_analyzer import CVAnalyzer
+from utils.debugger import Debugger
+
+# Initialize debugger
+debugger = Debugger()
+
+# App configuration
+st.set_page_config(
+    page_title="CV Analyzer",
+    page_icon="📄",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Page title and info
+st.title("CV Analyzer")
+st.markdown("Ein leistungsstarkes Tool zur Analyse von Lebensläufen und Bewertung von Fähigkeiten")
+
+# Initialize analyzer
+@st.cache_resource
+def get_analyzer():
+    return CVAnalyzer()
+
+analyzer = get_analyzer()
+
+# Function to download files
+def get_download_link(data, filename, text):
+    if isinstance(data, str):
+        data = data.encode()
+    b64 = base64.b64encode(data).decode()
+    href = f'<a href="data:file/txt;base64,{b64}" download="{filename}">{text}</a>'
+    return href
+
+# Page navigation
+page = st.sidebar.selectbox(
+    "Navigation",
+    ["CV Analyse", "Job Matching", "Batch Analyse", "Einstellungen"]
+)
+
+# CV Analysis page
+if page == "CV Analyse":
+    st.header("Lebenslauf analysieren")
     
-    def extract_text(self, file_path):
-        """Extract text from PDF or DOCX file."""
-        if file_path.lower().endswith('.pdf'):
-            return self._extract_text_from_pdf(file_path)
-        elif file_path.lower().endswith('.docx'):
-            return self._extract_text_from_docx(file_path)
-        elif file_path.lower().endswith('.txt'):
-            with open(file_path, 'r', encoding='utf-8') as file:
-                return file.read()
-        else:
-            raise ValueError("Unsupported file format. Please use PDF, DOCX, or TXT.")
+    # File upload
+    uploaded_file = st.file_uploader("Wählen Sie einen Lebenslauf (PDF, DOCX)", type=["pdf", "docx"])
     
-    def _extract_text_from_pdf(self, pdf_path):
-        """Extract text from PDF file."""
-        text = ""
-        with open(pdf_path, 'rb') as file:
-            pdf_reader = PyPDF2.PdfReader(file)
-            for page in pdf_reader.pages:
-                text += page.extract_text() or ""
-        return text
-    
-    def _extract_text_from_docx(self, docx_path):
-        """Extract text from DOCX file."""
-        doc = docx.Document(docx_path)
-        text = []
-        for paragraph in doc.paragraphs:
-            text.append(paragraph.text)
-        return '\n'.join(text)
-    
-    def analyze_cv_file(self, file_path, job_description=None):
-        """Analyze a CV file and return results."""
-        # Extract text from the file
-        cv_text = self.extract_text(file_path)
+    if uploaded_file is not None:
+        # Save temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{uploaded_file.name.split('.')[-1]}") as tmp:
+            tmp.write(uploaded_file.getvalue())
+            tmp_path = tmp.name
         
-        # Perform analysis
-        results = self._analyze_cv_text(cv_text)
-        
-        # If job description is provided, match CV against it
-        if job_description:
-            results.update(self._match_with_job_description(results, job_description))
-        
-        return results
-    
-    def _analyze_cv_text(self, cv_text):
-        """Analyze CV text and extract key information."""
-        # In a real implementation, this would use more sophisticated NLP
-        # For demo purposes, we'll use simple pattern matching and randomization
-        
-        # Extract skills
-        skills = self._extract_skills(cv_text)
-        
-        # Extract experience
-        experience = self._extract_experience(cv_text)
-        
-        # Determine profession (simplified)
-        profession = self._determine_profession(cv_text)
-        
-        # Determine experience level (simplified)
-        experience_level = self._determine_experience_level(experience)
-        
-        # Generate recommendations
-        recommendations = self._generate_recommendations(skills, experience)
-        
-        return {
-            "skills": skills,
-            "experience": experience,
-            "profession": profession,
-            "experience_level": experience_level,
-            "relevance_score": random.uniform(60, 95),  # Random score for demo
-            "recommendations": recommendations
-        }
-    
-    def _extract_skills(self, text):
-        """Extract skills from CV text."""
-        text = text.lower()
-        skills = {}
-        
-        # For each skill category, check presence in text
-        for category, keywords in self.skills_database.items():
-            for keyword in keywords:
-                if keyword in text:
-                    # Assign a score (in a real implementation, this would be more sophisticated)
-                    skills[keyword] = random.uniform(50, 100)
-        
-        return skills
-    
-    def _extract_experience(self, text):
-        """Extract work experience from CV text (simplified)."""
-        # In a real implementation, this would use NER and pattern recognition
-        # For demo, we'll generate some plausible experience entries
-        experience = []
-        
-        # Try to find company names (simplified)
-        company_pattern = r"(?:at|for|with)\s+([A-Z][A-Za-z\s]+(?:Inc|LLC|Ltd|GmbH|AG|SE|Company|Corp)?)"
-        companies = re.findall(company_pattern, text)
-        
-        # Generate random experience entries
-        for i, company in enumerate(companies[:5]):  # Limit to 5 entries
-            # Generate random dates
-            end_year = 2024 - i
-            start_year = end_year - random.randint(1, 4)
+        try:
+            # Progress bar
+            progress_bar = st.progress(0)
+            start_time = time.time()
             
-            experience.append({
-                "title": random.choice(["Software Developer", "Senior Engineer", "Project Manager", "Data Analyst", "Team Lead"]),
-                "company": company.strip(),
-                "description": f"Worked on various projects at {company.strip()}",
-                "start_date": f"{start_year}-01-01",
-                "end_date": f"{end_year}-12-31",
-                "duration": end_year - start_year
-            })
-        
-        return experience
-    
-    def _determine_profession(self, text):
-        """Determine profession from CV text."""
-        # In a real implementation, this would use classification or keyword extraction
-        # For demo, choose a profession that seems most relevant based on keyword count
-        text = text.lower()
-        profession_scores = {}
-        
-        profession_keywords = {
-            "Software Engineer": ["software", "developer", "programming", "code", "engineer"],
-            "Data Scientist": ["data", "analytics", "machine learning", "statistics", "analysis"],
-            "Project Manager": ["project", "management", "agile", "scrum", "planning"],
-            "UI/UX Designer": ["design", "user interface", "user experience", "ui", "ux"],
-            "Product Manager": ["product", "roadmap", "features", "requirements", "stakeholders"],
-            "Marketing Specialist": ["marketing", "campaign", "social media", "advertising", "brand"],
-            "Financial Analyst": ["finance", "financial", "accounting", "analysis", "budget"],
-            "HR Manager": ["hr", "human resources", "recruiting", "talent", "onboarding"]
-        }
-        
-        for profession, keywords in profession_keywords.items():
-            score = 0
-            for keyword in keywords:
-                score += text.count(keyword)
-            profession_scores[profession] = score
-        
-        # Return profession with highest score
-        if profession_scores:
-            return max(profession_scores, key=profession_scores.get)
-        else:
-            return "Not determined"
-    
-    def _determine_experience_level(self, experience):
-        """Determine experience level based on work history."""
-        # Calculate total years of experience
-        total_years = sum(exp.get("duration", 0) for exp in experience)
-        
-        # Determine level based on years
-        if total_years < 2:
-            return "Junior"
-        elif total_years < 5:
-            return "Mid-Level"
-        elif total_years < 8:
-            return "Senior"
-        elif total_years < 12:
-            return "Lead"
-        else:
-            return "Manager"
-    
-    def _generate_recommendations(self, skills, experience):
-        """Generate recommendations based on CV analysis."""
-        recommendations = []
-        
-        # Add recommendations based on skills
-        if len(skills) < 5:
-            recommendations.append("Consider adding more skills to your CV to showcase your expertise.")
-        
-        # Add recommendation for experience
-        if len(experience) < 3:
-            recommendations.append("Add more details about your work experience, including achievements and responsibilities.")
-        
-        # Add general recommendations
-        recommendations.append("Quantify your achievements with metrics and results where possible.")
-        recommendations.append("Tailor your CV for each specific job application.")
-        
-        return recommendations
-    
-    def _match_with_job_description(self, cv_results, job_description):
-        """Match CV results with job description."""
-        # Convert job description to lowercase for matching
-        job_text = job_description.lower()
-        
-        # Extract required skills from job description (simplified)
-        required_skills = {}
-        for category, keywords in self.skills_database.items():
-            for keyword in keywords:
-                if keyword in job_text:
-                    # Assign importance to the skill
-                    required_skills[keyword] = random.uniform(60, 100)
-        
-        # Determine which skills are missing or need improvement
-        cv_skills = cv_results.get("skills", {})
-        missing_skills = {}
-        
-        for skill, importance in required_skills.items():
-            if skill not in cv_skills:
-                missing_skills[skill] = importance
-            elif cv_skills[skill] < importance:
-                # Skill needs improvement
-                missing_skills[skill] = importance
-        
-        # Calculate match score
-        matches = 0
-        for skill in required_skills:
-            if skill in cv_skills:
-                matches += 1
-        
-        match_score = (matches / max(1, len(required_skills))) * 100 if required_skills else 70
-        
-        # Generate job-specific recommendations
-        job_recommendations = []
-        
-        if missing_skills:
-            skills_to_improve = ", ".join(list(missing_skills.keys())[:3])
-            job_recommendations.append(f"Highlight or develop skills in: {skills_to_improve}")
-        
-        job_recommendations.append("Customize your CV to better match the job requirements.")
-        job_recommendations.append("Highlight relevant achievements that demonstrate required competencies.")
-        
-        return {
-            "relevance_score": match_score,
-            "missing_skills": missing_skills,
-            "recommendations": cv_results.get("recommendations", []) + job_recommendations
-        }
-    
-    def export_results(self, results, format="csv"):
-        """Export analysis results to specified format."""
-        if format == "csv":
-            return self._export_to_csv(results)
-        elif format == "excel":
-            return self._export_to_excel(results)
-        else:
-            raise ValueError("Unsupported export format. Please use 'csv' or 'excel'.")
-    
-    def _export_to_csv(self, results):
-        """Export results to CSV format."""
-        # Create DataFrames for different sections
-        dfs = {}
-        
-        # Skills DataFrame
-        if "skills" in results and results["skills"]:
-            skills_df = pd.DataFrame({
-                "Skill": list(results["skills"].keys()),
-                "Rating": list(results["skills"].values())
-            })
-            dfs["Skills"] = skills_df
-        
-        # Experience DataFrame
-        if "experience" in results and results["experience"]:
-            experience_df = pd.DataFrame(results["experience"])
-            dfs["Experience"] = experience_df
-        
-        # Create CSV output
-        output = io.StringIO()
-        
-        # Write overview
-        output.write("CV Analysis Results\n")
-        output.write(f"Profession: {results.get('profession', 'Not determined')}\n")
-        output.write(f"Experience Level: {results.get('experience_level', 'Not determined')}\n")
-        output.write(f"Relevance Score: {results.get('relevance_score', 0):.2f}%\n\n")
-        
-        # Write skills table
-        if "Skills" in dfs:
-            output.write("Skills:\n")
-            dfs["Skills"].to_csv(output, index=False)
-            output.write("\n")
-        
-        # Write experience table
-        if "Experience" in dfs:
-            output.write("Experience:\n")
-            dfs["Experience"].to_csv(output, index=False)
-            output.write("\n")
-        
-        # Write recommendations
-        if "recommendations" in results and results["recommendations"]:
-            output.write("Recommendations:\n")
-            for i, rec in enumerate(results["recommendations"]):
-                output.write(f"{i+1}. {rec}\n")
-        
-        return output.getvalue()
-    
-    def _export_to_excel(self, results):
-        """Export results to Excel format."""
-        # Create an Excel file in memory
-        output = io.BytesIO()
-        
-        # Create Excel writer
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            # Create overview sheet
-            overview_data = {
-                "Field": ["Profession", "Experience Level", "Relevance Score"],
-                "Value": [
-                    results.get("profession", "Not determined"),
-                    results.get("experience_level", "Not determined"),
-                    f"{results.get('relevance_score', 0):.2f}%"
-                ]
-            }
-            overview_df = pd.DataFrame(overview_data)
-            overview_df.to_excel(writer, sheet_name="Overview", index=False)
+            # Perform analysis
+            with st.spinner("Analysiere Lebenslauf..."):
+                for i in range(100):
+                    # Simulate progress
+                    time.sleep(0.01)
+                    progress_bar.progress(i + 1)
+                
+                # Actual analysis
+                results = analyzer.analyze_cv_file(tmp_path)
+                
+                # Log performance metric
+                duration = time.time() - start_time
+                debugger.log_performance_metric("analysis_duration", duration)
             
-            # Create skills sheet
+            # Display results
+            st.success("Analyse abgeschlossen!")
+            
+            # Overview
+            st.subheader("Übersicht")
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Beruf", results.get("profession", "Nicht erkannt"))
+            
+            with col2:
+                st.metric("Erfahrungslevel", results.get("experience_level", "Nicht erkannt"))
+            
+            with col3:
+                st.metric("Relevanz Score", f"{results.get('relevance_score', 0):.0f}%")
+            
+            # Visualize skills
+            st.subheader("Fähigkeiten")
             if "skills" in results and results["skills"]:
                 skills_df = pd.DataFrame({
-                    "Skill": list(results["skills"].keys()),
-                    "Rating": list(results["skills"].values())
+                    "Fähigkeit": list(results["skills"].keys()),
+                    "Bewertung": list(results["skills"].values())
                 })
-                skills_df.to_excel(writer, sheet_name="Skills", index=False)
+                
+                fig = px.bar(
+                    skills_df, 
+                    x="Fähigkeit", 
+                    y="Bewertung",
+                    color="Bewertung",
+                    color_continuous_scale="viridis",
+                    title="Fähigkeiten-Bewertung"
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("Keine Fähigkeiten erkannt.")
             
-            # Create experience sheet
+            # Visualize experience
+            st.subheader("Berufserfahrung")
             if "experience" in results and results["experience"]:
+                st.markdown("### Zeitleiste")
+                
+                # Experience timeline
                 experience_df = pd.DataFrame(results["experience"])
-                experience_df.to_excel(writer, sheet_name="Experience", index=False)
+                experience_df["start_date"] = pd.to_datetime(experience_df["start_date"])
+                experience_df["end_date"] = pd.to_datetime(experience_df["end_date"])
+                experience_df["duration"] = (experience_df["end_date"] - experience_df["start_date"]).dt.days / 365.25
+                
+                fig = px.timeline(
+                    experience_df,
+                    x_start="start_date",
+                    x_end="end_date",
+                    y="title",
+                    color="company",
+                    title="Berufserfahrung"
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Experience table
+                st.dataframe(
+                    experience_df[["title", "company", "start_date", "end_date", "duration"]].rename(
+                        columns={
+                            "title": "Position",
+                            "company": "Unternehmen",
+                            "start_date": "Startdatum",
+                            "end_date": "Enddatum",
+                            "duration": "Dauer (Jahre)"
+                        }
+                    ).sort_values("Startdatum", ascending=False)
+                )
+            else:
+                st.info("Keine Berufserfahrung erkannt.")
             
-            # Create recommendations sheet
-            if "recommendations" in results and results["recommendations"]:
-                recs_df = pd.DataFrame({
-                    "Recommendation": results["recommendations"]
-                })
-                recs_df.to_excel(writer, sheet_name="Recommendations", index=False)
+            # Recommendations
+            st.subheader("Empfehlungen")
+            recommendations = results.get("recommendations", [])
+            if recommendations:
+                for i, rec in enumerate(recommendations):
+                    st.markdown(f"**{i+1}.** {rec}")
+            else:
+                st.info("Keine Empfehlungen verfügbar.")
             
-            # Create missing skills sheet if available
-            if "missing_skills" in results and results["missing_skills"]:
-                missing_df = pd.DataFrame({
-                    "Skill": list(results["missing_skills"].keys()),
-                    "Importance": list(results["missing_skills"].values())
-                })
-                missing_df.to_excel(writer, sheet_name="Missing Skills", index=False)
+            # Export options
+            st.subheader("Ergebnisse exportieren")
+            col1, col2, col3 = st.columns(3)
+            
+            # JSON Export
+            with col1:
+                json_data = json.dumps(results, indent=2)
+                st.markdown(
+                    get_download_link(json_data, "cv_analysis.json", "Als JSON herunterladen"),
+                    unsafe_allow_html=True
+                )
+            
+            # CSV Export
+            with col2:
+                csv_data = analyzer.export_results(results, format="csv")
+                st.markdown(
+                    get_download_link(csv_data, "cv_analysis.csv", "Als CSV herunterladen"),
+                    unsafe_allow_html=True
+                )
+            
+            # Excel Export
+            with col3:
+                excel_data = analyzer.export_results(results, format="excel")
+                st.markdown(
+                    get_download_link(excel_data, "cv_analysis.xlsx", "Als Excel herunterladen"),
+                    unsafe_allow_html=True
+                )
+                
+        except Exception as e:
+            st.error(f"Fehler bei der Analyse: {str(e)}")
+            debugger.log_error(e, "cv_analysis")
         
-        # Get the Excel data
-        output.seek(0)
-        excel_data = output.getvalue()
+        finally:
+            # Delete temporary file
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+
+# Job Matching page
+elif page == "Job Matching":
+    st.header("Lebenslauf mit Stellenbeschreibung abgleichen")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("Lebenslauf")
+        cv_file = st.file_uploader("Lebenslauf hochladen (PDF, DOCX)", type=["pdf", "docx"])
+    
+    with col2:
+        st.subheader("Stellenbeschreibung")
+        job_description = st.text_area("Fügen Sie die Stellenbeschreibung ein oder laden Sie eine Datei hoch", height=300)
+        job_file = st.file_uploader("Stellenbeschreibung hochladen (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
         
-        return excel_data
+        if job_file is not None:
+            # Save temporary file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f".{job_file.name.split('.')[-1]}") as tmp:
+                tmp.write(job_file.getvalue())
+                job_path = tmp.name
+            
+            # Read file
+            try:
+                job_description = analyzer.extract_text(job_path)
+                st.success("Stellenbeschreibung erfolgreich geladen!")
+            except Exception as e:
+                st.error(f"Fehler beim Lesen der Stellenbeschreibung: {str(e)}")
+                debugger.log_error(e, "job_description_reading")
+            
+            # Delete temporary file
+            if os.path.exists(job_path):
+                os.unlink(job_path)
+    
+    # Match button
+    if cv_file and (job_description or job_file):
+        if st.button("Lebenslauf mit Stellenbeschreibung abgleichen"):
+            # Save temporary file for CV
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f".{cv_file.name.split('.')[-1]}") as tmp:
+                tmp.write(cv_file.getvalue())
+                cv_path = tmp.name
+            
+            try:
+                # Progress bar
+                progress_bar = st.progress(0)
+                start_time = time.time()
+                
+                with st.spinner("Führe Matching durch..."):
+                    for i in range(100):
+                        # Simulate progress
+                        time.sleep(0.01)
+                        progress_bar.progress(i + 1)
+                    
+                    # Actual analysis
+                    results = analyzer.analyze_cv_file(cv_path, job_description)
+                    
+                    # Log performance metric
+                    duration = time.time() - start_time
+                    debugger.log_performance_metric("match_duration", duration)
+                
+                st.success("Matching abgeschlossen!")
+                
+                # Match score
+                st.subheader("Match-Ergebnisse")
+                
+                # Gauge chart for match score
+                match_score = results.get("relevance_score", 0)
+                fig = px.pie(
+                    values=[match_score, 100-match_score],
+                    names=["Match", "Gap"],
+                    hole=0.7,
+                    color_discrete_sequence=["#4B8BBE", "#E2E8F0"]
+                )
+                fig.update_layout(
+                    annotations=[{
+                        "text": f"{match_score:.0f}%",
+                        "showarrow": False,
+                        "font": {"size": 40}
+                    }],
+                    showlegend=False
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Missing skills
+                st.subheader("Empfohlene Verbesserungen")
+                
+                if "missing_skills" in results and results["missing_skills"]:
+                    missing_skills_df = pd.DataFrame({
+                        "Fähigkeit": list(results["missing_skills"].keys()),
+                        "Wichtigkeit": list(results["missing_skills"].values())
+                    })
+                    
+                    fig = px.bar(
+                        missing_skills_df,
+                        x="Fähigkeit",
+                        y="Wichtigkeit",
+                        color="Wichtigkeit", 
+                        color_continuous_scale="oranges",
+                        title="Fehlende oder zu verbessernde Fähigkeiten"
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("Keine fehlenden Fähigkeiten identifiziert.")
+                
+                # Recommendations
+                if "recommendations" in results and results["recommendations"]:
+                    for i, rec in enumerate(results["recommendations"]):
+                        st.markdown(f"**{i+1}.** {rec}")
+                
+                # Export options
+                st.subheader("Er
